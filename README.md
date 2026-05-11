@@ -2,7 +2,7 @@
 
 **Paper:** Closing the Definition Dependency Gap: Pre-Embedding Definition Injection for Legal Contract Retrieval  
 **Author:** Kamal Goyal — Kaytech Software Canada Inc.  
-**Preprint:** [Zenodo — add your DOI link here]  
+**Preprint:** [Zenodo](https://doi.org/10.5281/zenodo.20126274)
 **arxiv:** [add link after submission]
 
 ---
