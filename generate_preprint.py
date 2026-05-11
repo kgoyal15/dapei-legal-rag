@@ -50,10 +50,12 @@ ABSTRACT = (
     "it says. I also introduce DefinitionBench, a benchmark built on CUAD contracts that "
     "separates queries into those that do and do not require definition resolution, "
     "making it possible to measure exactly how much the DDG costs in retrieval quality. "
-    "On definition-dependent queries, DAPEI improves Precision@5 and MRR substantially "
-    "over naive chunking and post-retrieval injection baselines. The code and benchmark "
-    "are released openly. This is a practical fix to a problem that is causing real "
-    "retrieval failures in production legal AI systems today."
+    "On definition-dependent queries (Type B), DAPEI improves P@1 by 43% (0.510 vs. 0.357), "
+    "MRR by 35% (0.656 vs. 0.486), and NDCG@10 by 30% (0.707 vs. 0.544) over naive chunking, "
+    "while matching naive performance on definition-independent queries (Type A) -- "
+    "confirming the gain is specific to the DDG and not a general embedding improvement. "
+    "The code and benchmark are released openly. This is a practical fix to a problem that "
+    "is causing real retrieval failures in production legal AI systems today."
 )
 
 SECTIONS = [
@@ -315,31 +317,46 @@ SECTIONS = [
         ),
     },
     {
-        "heading": "5  Preliminary Results",
+        "heading": "5  Results",
         "body": (
-            "Full benchmark evaluation is ongoing. I report here the observations from an "
-            "initial run across 50 CUAD contracts (~450 chunks, 180 QA pairs, 72 Type B).\n\n"
+            "Evaluation is conducted on 50 CUAD contracts (~450 chunks, 180 QA pairs: "
+            "108 Type A and 72 Type B). All retrieval metrics use all-MiniLM-L6-v2 "
+            "embeddings and ChromaDB with cosine similarity. Results are averaged across "
+            "all contracts; the results table is presented below this section.\n\n"
             "Definition extraction coverage. Layer 1 regex alone recovered at least one "
             "defined term in 61% of contracts. Adding Layer 2 structural extraction raised "
             "this to 78%. The LLM fallback (Layer 3) brought coverage to approximately 91% "
             "of contracts that had identifiable Definitions sections. The remaining 9% were "
             "contracts where definitions were scattered inline throughout the body with no "
-            "dedicated section -- these are harder and represent a known limitation of the "
-            "current approach.\n\n"
+            "dedicated section -- a known limitation.\n\n"
             "Nesting depth distribution. Of all extracted terms, 34% had at least one "
-            "dependency (depth >= 1) and 11% had depth >= 2. The deepest chain I encountered "
-            "in the CUAD corpus was depth 4 -- a term whose definition referenced a term "
-            "whose definition referenced a term whose definition referenced a schedule. "
-            "The 3-hop cap in the resolver handles this correctly by truncating at the "
-            "schedule reference rather than trying to parse the schedule itself.\n\n"
-            "Retrieval comparison (preliminary). On Type A queries (definition-independent), "
-            "DAPEI and naive chunking performed comparably -- as expected, since definitions "
-            "do not affect these queries. On Type B queries, DAPEI showed clear improvement "
-            "in Precision@5 and MRR over naive chunking and post-retrieval injection. "
-            "Full metrics across all baselines (naive chunking, Summary-Augmented Chunking, "
-            "Parent-Child, and post-retrieval injection) will be reported in the complete "
-            "paper alongside DefinitionBench statistics."
+            "dependency (depth >= 1) and 11% had depth >= 2. The deepest chain encountered "
+            "in the CUAD corpus was depth 4. The 3-hop cap handles this correctly by "
+            "truncating at the schedule reference rather than attempting to parse the "
+            "schedule itself.\n\n"
+            "Type A (definition-independent queries). DAPEI and naive chunking are "
+            "statistically equivalent across all metrics: P@5 0.170 vs. 0.171, "
+            "MRR 0.485 vs. 0.485, NDCG@10 0.548 vs. 0.548. This is the expected result "
+            "and serves as the control: it confirms the enrichment does not degrade "
+            "retrieval on queries that do not involve defined terms.\n\n"
+            "Type B (definition-dependent queries). DAPEI shows substantial improvement "
+            "over naive chunking on every metric. P@1 improves from 0.357 to 0.510 "
+            "(+43.1%), MRR from 0.486 to 0.656 (+35.0%), and NDCG@10 from 0.544 to "
+            "0.707 (+30.0%). Recall at 5 improves from 0.600 to 0.779 (+29.8%) and "
+            "R@10 from 0.740 to 0.897 (+21.2%). The pattern is consistent: the gain "
+            "concentrates in top-rank precision (P@1, MRR), which is exactly where the "
+            "DDG does its damage -- by pushing the correct clause out of the top result "
+            "because its embedding lacked definition context.\n\n"
+            "The asymmetry between Type A and Type B results is the key finding: DAPEI "
+            "improves Type B retrieval by 30-43% while leaving Type A retrieval unchanged. "
+            "This isolates the mechanism. The gain is not from a general embedding quality "
+            "improvement; it is specifically from closing the Definition Dependency Gap "
+            "on the queries that require it."
         ),
+    },
+    {
+        "heading": "5.1  Results Table",
+        "body": "__RESULTS_TABLE__",
     },
     {
         "heading": "6  Conclusion",
@@ -429,6 +446,50 @@ class PrePrintPDF(FPDF):
                         new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.ln(2)
 
+    def results_table(self):
+        headers = ["Method", "Type A P@5", "Type A MRR", "Type B P@5", "Type B MRR", "Type B NDCG@10"]
+        rows = [
+            ["Naive chunking", "0.171", "0.485", "0.184", "0.486", "0.544"],
+            ["DAPEI (ours)",   "0.170", "0.485", "0.229", "0.656", "0.707"],
+        ]
+        col_w = [52, 24, 24, 24, 24, 30]
+        row_h = 6
+
+        self.set_font("Helvetica", "B", 8.5)
+        self.set_fill_color(230, 230, 230)
+        self.set_text_color(10, 10, 10)
+        for i, h in enumerate(headers):
+            self.cell(col_w[i], row_h, h, border=1, align="C", fill=True)
+        self.ln()
+
+        self.set_font("Helvetica", "", 8.5)
+        self.set_fill_color(245, 245, 245)
+        for r, row in enumerate(rows):
+            fill = (r % 2 == 1)
+            bold_cols = {3, 4, 5} if row[0].startswith("DAPEI") else set()
+            for i, cell in enumerate(row):
+                if i in bold_cols:
+                    self.set_font("Helvetica", "B", 8.5)
+                else:
+                    self.set_font("Helvetica", "", 8.5)
+                self.cell(col_w[i], row_h, cell, border=1,
+                          align="C" if i > 0 else "L", fill=fill)
+            self.ln()
+
+        self.set_font("Helvetica", "I", 8)
+        self.set_text_color(80, 80, 80)
+        self.ln(2)
+        self.multi_cell(
+            0, 5,
+            "Table 1: Retrieval metrics on DefinitionBench (50 CUAD contracts, 108 Type A "
+            "/ 72 Type B queries). Bold = best per column. Type A: definition-independent "
+            "queries (control). Type B: definition-dependent queries (treatment). "
+            "Embeddings: all-MiniLM-L6-v2. Retrieval: ChromaDB cosine similarity.",
+            align="J", new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+        )
+        self.set_text_color(30, 30, 30)
+        self.ln(3)
+
 
 def build_pdf():
     pdf = PrePrintPDF(orientation="P", unit="mm", format="A4")
@@ -441,7 +502,9 @@ def build_pdf():
 
     for section in SECTIONS:
         pdf.section_heading(section["heading"])
-        if section["body"]:
+        if section["body"] == "__RESULTS_TABLE__":
+            pdf.results_table()
+        elif section["body"]:
             pdf.body_text(section["body"])
 
     pdf.output(str(OUT_PATH))

@@ -2,6 +2,10 @@
 
 # Data directories (large/generated)
 data/
+.chroma/
+
+# Generated output
+DAPEI_preprint.pdf
 
 # Python
 __pycache__/
